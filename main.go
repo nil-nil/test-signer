@@ -9,6 +9,7 @@ import (
 	"encoding/pem"
 	"flag"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
@@ -30,9 +31,10 @@ const (
 
 func main() {
 	dsn := flag.String("db", "postgres://postgres:@127.0.0.1:5434/toggl", "Database connection string")
+	host := flag.String("host", "localhost:3000", "Server host")
 	flag.Parse()
 
-	args := os.Args[1:]
+	args := flag.Args()
 	if len(args) == 0 {
 		panic("need a command")
 	}
@@ -57,6 +59,7 @@ func main() {
 		naclKeyBytes := ([64]byte)(naclKey)
 
 		// Set up the handler
+		slog.Info("connecting to", "db", *dsn)
 		pool, err := pgxpool.New(context.Background(), *dsn)
 		if err != nil {
 			panic(err)
@@ -70,7 +73,9 @@ func main() {
 		}
 		h := handler.NewHandler(svc, auth)
 
-		http.ListenAndServe("0.0.0.0:3000", h)
+		slog.Info("listening on", "host", *host)
+
+		http.ListenAndServe(*host, h)
 	case "init":
 		rsaPrivateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 		if err != nil {
