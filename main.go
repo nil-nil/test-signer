@@ -7,6 +7,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -28,6 +29,9 @@ const (
 )
 
 func main() {
+	dsn := flag.String("db", "postgres://postgres:@127.0.0.1:5434/toggl", "Database connection string")
+	flag.Parse()
+
 	args := os.Args[1:]
 	if len(args) == 0 {
 		panic("need a command")
@@ -53,7 +57,7 @@ func main() {
 		naclKeyBytes := ([64]byte)(naclKey)
 
 		// Set up the handler
-		pool, err := pgxpool.New(context.Background(), "postgres://postgres:@127.0.0.1:5434/toggl")
+		pool, err := pgxpool.New(context.Background(), *dsn)
 		if err != nil {
 			panic(err)
 		}
