@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"time"
@@ -40,8 +41,14 @@ func NewSignatureService(repo Repository, signer Signer) *SignatureService {
 }
 
 func (s *SignatureService) VerifySignature(ctx context.Context, userID uint, key string) (Signature, error) {
+	// Get the original key from the base64 url encoded version
+	originalKey, err := base64.URLEncoding.DecodeString(key)
+	if err != nil {
+		return Signature{}, errors.Join(ErrInternalError, err)
+	}
+
 	// Get the signature
-	sig, err := s.repo.GetSignature(ctx, key)
+	sig, err := s.repo.GetSignature(ctx, string(originalKey))
 	if errors.Is(err, ErrNotFound) {
 		return Signature{}, err
 	}
@@ -75,7 +82,7 @@ func (s *SignatureService) SignAnswers(ctx context.Context, userID uint, test ma
 
 	// Save the signature
 	sig := Signature{
-		Key:       key,
+		Key:       base64.URLEncoding.EncodeToString([]byte(key)),
 		Test:      test,
 		UserID:    userID,
 		Timestamp: time.Now(),

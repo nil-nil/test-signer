@@ -11,6 +11,10 @@ type Repository struct {
 	pool *pgxpool.Pool
 }
 
+func NewRepository(pool *pgxpool.Pool) *Repository {
+	return &Repository{pool}
+}
+
 func (r *Repository) SaveSignature(ctx context.Context, signature service.Signature) error {
 	_, err := r.pool.Exec(
 		ctx,
