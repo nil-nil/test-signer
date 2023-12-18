@@ -2,7 +2,10 @@ module github.com/nil-nil/test-signer
 
 go 1.21.5
 
-require github.com/stretchr/testify v1.8.4
+require (
+	github.com/stretchr/testify v1.8.4
+	golang.org/x/crypto v0.16.0
+)
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
