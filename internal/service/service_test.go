@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"testing"
 	"time"
@@ -108,7 +109,7 @@ func TestSignAnswers(t *testing.T) {
 		assert.Equal(t, expectUser, sig.UserID, "expect provided values")
 		assert.Equal(t, expectTest, sig.Test, "expect provided values")
 		assert.True(t, time.Since(sig.Timestamp) < 500*time.Millisecond, "exxpect recent timestamp")
-		assert.Equal(t, expectKey, sig.Key, "Expect key returned by signer")
+		assert.Equal(t, base64.URLEncoding.EncodeToString([]byte(expectKey)), sig.Key, "Expect key returned by signer")
 	})
 }
 
