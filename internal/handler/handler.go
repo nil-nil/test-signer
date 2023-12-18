@@ -1,65 +1,90 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"regexp"
-	"strconv"
+	"strings"
 
-	jwtmiddleware "github.com/auth0/go-jwt-middleware/v2"
-	"github.com/auth0/go-jwt-middleware/v2/validator"
 	"github.com/nil-nil/test-signer/internal/service"
 )
 
 type Handler struct {
-	svc *service.SignatureService
+	svc  *service.SignatureService
+	auth AuthProvider
 }
 
-func NewHandler(svc *service.SignatureService) *Handler {
-	return &Handler{svc}
+type userContextKey struct{}
+
+var UserContextKey = userContextKey{}
+
+func NewHandler(svc *service.SignatureService, auth AuthProvider) *Handler {
+	return &Handler{svc, auth}
+}
+
+type AuthProvider interface {
+	// NewToken creates a new token tied to the specfied user
+	NewToken(userID uint) (token string, err error)
+
+	// ValidateToken verifies that a token is valid and trusted by us
+	ValidateToken(token string) (err error)
+
+	// GetUser verifies that a token is valid and trusted by us, identifies the user it is tied to, and returns that user.
+	//
+	// ok tells us if the token is valid. err gives us additional information if the toke is invalid.
+	GetUser(ctx context.Context, token string) (userID uint, err error)
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Get the JWT claims
-	claims, ok := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
+	// Get the JWT and validate it
+	authHeader := r.Header.Get("Authorization")
+	token, ok := strings.CutPrefix(authHeader, "Bearer ")
 	if !ok {
-		http.Error(w, "failed to get validated claims", http.StatusUnauthorized)
+		slog.Error("unauthorized request", "err", "invalid token")
+		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
-
-	// Get the user ID subject
-	var (
-		sub uint64
-		err error
-	)
-	if sub, err = strconv.ParseUint(claims.RegisteredClaims.Subject, 10, 32); err != nil || sub == 0 {
-		http.Error(w, "failed to get subject claim", http.StatusUnauthorized)
+	sub, err := h.auth.GetUser(r.Context(), token)
+	if err != nil {
+		slog.Error("unauthorized request", "err", err)
+		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 
 	// Route the request
 	var payload []byte
 	switch {
-	case r.Method == http.MethodGet:
-		payload, err = h.VerifySignature(uint(sub), r)
-		// Return 404 for non-matching signatures so as not to leak that the signature exists for a different user
-		if errors.Is(err, service.ErrNotFound) || errors.Is(err, service.ErrNoMatch) {
+	case strings.HasPrefix(r.URL.Path, "/signatures"):
+		switch {
+		case r.Method == http.MethodGet:
+			payload, err = h.VerifySignature(sub, r)
+			// Return 404 for non-matching signatures so as not to leak that the signature exists for a different user
+			if errors.Is(err, service.ErrNotFound) || errors.Is(err, service.ErrNoMatch) {
+				slog.Error("handler error", "err", err)
+				http.NotFound(w, r)
+				return
+			}
+			if err != nil {
+				slog.Error("handler error", "err", err)
+				http.Error(w, "", http.StatusInternalServerError)
+				return
+			}
+		case r.Method == http.MethodPost:
+			payload, err = h.SignAnswers(sub, r)
+			if err != nil {
+				slog.Error("handler error", "err", err)
+				http.Error(w, "", http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusCreated)
+		default:
 			http.NotFound(w, r)
 			return
 		}
-		if err != nil {
-			http.Error(w, "", http.StatusInternalServerError)
-			return
-		}
-	case r.Method == http.MethodPost:
-		payload, err = h.SignAnswers(uint(sub), r)
-		if err != nil {
-			http.Error(w, "", http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusCreated)
 	default:
 		http.NotFound(w, r)
 		return
